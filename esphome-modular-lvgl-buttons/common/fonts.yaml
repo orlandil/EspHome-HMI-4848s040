@@ -1,0 +1,40 @@
+font:
+  - file: "gfonts://Nunito@600"
+    id: nunito_110
+    size: 110
+    bpp: 8
+  
+  - file: "gfonts://Nunito@600"
+    id: nunito_72
+    size: 72
+    bpp: 8
+    
+  - file: "gfonts://Nunito@600"
+    id: nunito_48
+    size: 48
+    bpp: 8 
+
+    
+  - file: "gfonts://Nunito@600"
+    id: nunito_24
+    size: 24
+    bpp: 8
+    glyphsets: [GF_Latin_Core]   # lettere accentate (titoli eventi, nomi)
+    
+  - file: "gfonts://Nunito@600"
+    id: nunito_20
+    size: 20
+    bpp: 8
+    glyphsets: [GF_Latin_Core]   # lettere accentate (titoli eventi, nomi)  
+
+  - file: "gfonts://Nunito@600"
+    id: nunito_18
+    size: 18
+    bpp: 8
+    glyphsets: [GF_Latin_Core]   # lettere accentate (titoli eventi, nomi)
+    
+  - file: "gfonts://Nunito@600"
+    id: nunito_14
+    size: 14
+    bpp: 8
+    glyphsets: [GF_Latin_Core]   # lettere accentate (titoli eventi, nomi)

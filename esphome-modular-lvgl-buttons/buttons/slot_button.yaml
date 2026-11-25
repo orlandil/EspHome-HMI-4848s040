@@ -1,0 +1,95 @@
+---
+# Slot dinamico configurabile dal display (vedi custom_components/hmi_slots.h)
+# vars:
+#    n:       indice 0..11
+#    num:     numero mostrato (1..12)
+#    row, column
+#    page_id: (opz.) pagina, default dispositivi_page
+#
+# Tocco breve:  on/off -> toggle in HA | telecamera -> apre l'immagine | vuoto -> editor
+# Tocco lungo:  apre l'editor (cambia entità/icona o svuota lo slot)
+
+# Configurazione persistente dello slot (visibile anche in HA, categoria "config")
+text:
+  - platform: template
+    id: slot_cfg_${n}
+    name: "Slot ${num}"
+    icon: mdi:gesture-tap-button
+    optimistic: true
+    restore_value: true
+    mode: text
+    max_length: 120
+    entity_category: config
+    on_value:
+      - lambda: 'hmi_slots::load(${n}, x);'
+
+esphome:
+  on_boot:
+    - priority: -100
+      then:
+        - lambda: |-
+            hmi_slots::attach(${n}, id(slot_cfg_${n}), id(slot_btn_${n}), id(slot_icon_${n}),
+                              id(slot_val_${n}), id(slot_name_${n}));
+
+lvgl:
+  pages:
+    - id: !extend ${page_id | default('dispositivi_page')}
+      widgets:
+        - container:
+            id: slot_${n}
+            grid_cell_row_pos: ${row}
+            grid_cell_column_pos: ${column}
+            grid_cell_x_align: stretch
+            grid_cell_y_align: stretch
+            widgets:
+              - button:
+                  id: slot_btn_${n}
+                  widgets:
+                    - label:
+                        id: slot_icon_${n}
+                        text_font: mdi_slot_icons_40
+                        align: top_left
+                        text_color: $icon_off_color
+                        text: $mdi_plus
+                    - label:
+                        id: slot_val_${n}
+                        align: left_mid
+                        text_color: $label_on_color
+                        text: ""
+                    - label:
+                        id: slot_name_${n}
+                        align: bottom_left
+                        width: 100%
+                        text_color: $label_off_color
+                        text: "Vuoto"
+                  on_short_click:
+                    - if:
+                        condition:
+                          lambda: 'return hmi_slots::type_of(${n}) == ''t'';'
+                        then:
+                          - homeassistant.action:
+                              action: homeassistant.toggle
+                              data:
+                                entity_id: !lambda 'return hmi_slots::entity_of(${n});'
+                        else:
+                          - if:
+                              condition:
+                                lambda: 'return hmi_slots::type_of(${n}) == ''c'';'
+                              then:
+                                - script.execute:
+                                    id: cam_open
+                                    idx: ${n}
+                                    url: !lambda 'return hmi_slots::entity_of(${n});'
+                                    title: !lambda 'return hmi_slots::label_of(${n});'
+                              else:
+                                - if:
+                                    condition:
+                                      lambda: 'return hmi_slots::type_of(${n}) == 0;'
+                                    then:
+                                      - script.execute:
+                                          id: slot_editor_open
+                                          idx: ${n}
+                  on_long_press:
+                    - script.execute:
+                        id: slot_editor_open
+                        idx: ${n}

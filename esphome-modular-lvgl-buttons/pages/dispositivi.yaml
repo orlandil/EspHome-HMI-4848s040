@@ -1,0 +1,416 @@
+---
+# Home + pagina "Dispositivi": 24 slot configurabili dal display, senza riprogrammare.
+#
+# vars:
+#    ha_list_prefix: prefisso dei sensori con gli elenchi entità (default hmi,
+#                condivisibili tra più display)
+#    ha_prefix:  prefisso del sensore con lo stato degli slot (default hmi), vedi
+#                homeassistant/hmi_template.yaml
+#
+# Richiede in Home Assistant i sensori template:
+#    sensor.${ha_prefix}_slot_stati      (attributo "stati")
+#    sensor.${ha_list_prefix}_entita_toggle   (attributi "nomi", "ids")
+#    sensor.${ha_list_prefix}_entita_sensori  (attributi "nomi", "ids")
+#
+# Uso: nella pagina "Dispositivi" tocca uno slot vuoto (+) oppure tieni premuto
+# uno slot per scegliere entità e icona; "Avanti" apre la tastiera per il nome
+# mostrato sul pulsante.
+
+esphome:
+  includes:
+    - esphome-modular-lvgl-buttons/custom_components/hmi_slots.h
+  on_boot:
+    - priority: -100
+      then:
+        - lambda: |-
+            auto opts = hmi_slots::icon_options();
+            lv_roller_set_options(id(edit_icon_roller)->obj, opts.c_str(), LV_ROLLER_MODE_NORMAL);
+
+packages:
+  # Telecamere (slot di tipo "Telecamera")
+  - !include ../pages/telecamere.yaml
+  - !include { file: ../buttons/slot_button.yaml, vars: { n: 0,  num: 1,  row: 0, column: 0 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { n: 1,  num: 2,  row: 0, column: 1 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { n: 2,  num: 3,  row: 0, column: 2 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { n: 3,  num: 4,  row: 0, column: 3 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { n: 4,  num: 5,  row: 1, column: 0 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { n: 5,  num: 6,  row: 1, column: 1 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { n: 6,  num: 7,  row: 1, column: 2 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { n: 7,  num: 8,  row: 1, column: 3 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { n: 8,  num: 9,  row: 2, column: 0 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { n: 9,  num: 10, row: 2, column: 1 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { n: 10, num: 11, row: 2, column: 2 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { n: 11, num: 12, row: 2, column: 3 } }
+  # Home (main_page): slot 13-24
+  - !include { file: ../buttons/slot_button.yaml, vars: { page_id: main_page, n: 12, num: 13, row: 0, column: 0 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { page_id: main_page, n: 13, num: 14, row: 0, column: 1 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { page_id: main_page, n: 14, num: 15, row: 0, column: 2 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { page_id: main_page, n: 15, num: 16, row: 0, column: 3 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { page_id: main_page, n: 16, num: 17, row: 1, column: 0 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { page_id: main_page, n: 17, num: 18, row: 1, column: 1 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { page_id: main_page, n: 18, num: 19, row: 1, column: 2 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { page_id: main_page, n: 19, num: 20, row: 1, column: 3 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { page_id: main_page, n: 20, num: 21, row: 2, column: 0 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { page_id: main_page, n: 21, num: 22, row: 2, column: 1 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { page_id: main_page, n: 22, num: 23, row: 2, column: 2 } }
+  - !include { file: ../buttons/slot_button.yaml, vars: { page_id: main_page, n: 23, num: 24, row: 2, column: 3 } }
+  - !include
+    file: ../buttons/page_button.yaml
+    vars:
+      page_id: dispositivi_page
+      uid: dispositivi_page_home
+      row: 3
+      column: 3
+      text: Home
+      icon_font: mdi_icons_80
+      icon: $mdi_home
+      click_page: main_page
+
+# Dati da Home Assistant
+text_sensor:
+  - platform: homeassistant
+    id: ha_slot_stati
+    entity_id: sensor.${ha_prefix | default('hmi')}_slot_stati
+    attribute: stati
+    internal: true
+    on_value:
+      - lambda: 'hmi_slots::apply_states(x);'
+
+  - platform: homeassistant
+    id: ha_toggle_nomi
+    entity_id: sensor.${ha_list_prefix | default('hmi')}_entita_toggle
+    attribute: nomi
+    internal: true
+    on_value:
+      - lambda: 'hmi_slots::set_list(''t'', x, id(ha_toggle_ids).state);'
+  - platform: homeassistant
+    id: ha_toggle_ids
+    entity_id: sensor.${ha_list_prefix | default('hmi')}_entita_toggle
+    attribute: ids
+    internal: true
+    on_value:
+      - lambda: 'hmi_slots::set_list(''t'', id(ha_toggle_nomi).state, x);'
+
+  - platform: homeassistant
+    id: ha_sensori_nomi
+    entity_id: sensor.${ha_list_prefix | default('hmi')}_entita_sensori
+    attribute: nomi
+    internal: true
+    on_value:
+      - lambda: 'hmi_slots::set_list(''s'', x, id(ha_sensori_ids).state);'
+  - platform: homeassistant
+    id: ha_sensori_ids
+    entity_id: sensor.${ha_list_prefix | default('hmi')}_entita_sensori
+    attribute: ids
+    internal: true
+    on_value:
+      - lambda: 'hmi_slots::set_list(''s'', id(ha_sensori_nomi).state, x);'
+
+script:
+  - id: slot_editor_open
+    parameters:
+      idx: int
+    then:
+      - lambda: |-
+          hmi_slots::editor_open(idx, id(edit_title), id(edit_roller)->obj, id(edit_icon_roller)->obj, id(edit_info));
+      - script.execute: slot_editor_type_refresh
+      - lvgl.page.show: slot_edit_page
+
+  # Torna alla pagina da cui è stato aperto l'editor
+  - id: slot_editor_close
+    then:
+      - if:
+          condition:
+            lambda: 'return hmi_slots::edit_on_home();'
+          then:
+            - lvgl.page.show: main_page
+          else:
+            - lvgl.page.show: dispositivi_page
+
+  # Evidenzia il tipo selezionato (On/Off o Sensore)
+  # Salva lo slot con il nome scritto nella textarea
+  - id: slot_name_save
+    then:
+      - if:
+          condition:
+            lambda: 'return hmi_slots::editor_save(lv_textarea_get_text(id(slot_name_ta)), id(edit_icon_roller)->obj);'
+          then:
+            - script.execute: slot_editor_close
+
+  - id: slot_editor_type_refresh
+    then:
+      - lambda: |-
+          char t = hmi_slots::edit_type;
+          lv_obj_set_style_bg_color(id(edit_type_t), lv_color_hex(t == 't' ? 0xF37320 : 0x313131), 0);
+          lv_obj_set_style_bg_color(id(edit_type_s), lv_color_hex(t == 's' ? 0xF37320 : 0x313131), 0);
+          lv_obj_set_style_bg_color(id(edit_type_c), lv_color_hex(t == 'c' ? 0xF37320 : 0x313131), 0);
+
+font:
+  - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
+    id: mdi_slot_icons_40
+    size: 40
+    bpp: 8
+    # Stesso ordine di ICONS[] in hmi_slots.h (più l'icona "+" per gli slot vuoti)
+    glyphs: [
+      $mdi_lightbulb, $mdi_ceiling_light, $mdi_lamp, $mdi_led_strip,
+      $mdi_power_plug, $mdi_power_socket_eu, $mdi_fan, $mdi_radiator,
+      $mdi_heat_wave, $mdi_snowflake, $mdi_air_filter, $mdi_water_boiler,
+      $mdi_washing_machine, $mdi_dishwasher, $mdi_television, $mdi_speaker,
+      $mdi_garage, $mdi_door, $mdi_lock, $mdi_thermometer,
+      $mdi_water_percent, $mdi_lightning_bolt, $mdi_gauge, $mdi_toggle_switch_variant,
+      $mdi_cctv,
+      $mdi_plus,
+    ]
+
+lvgl:
+  pages:
+    - id: dispositivi_page
+      styles: page_style
+      layout: 4x4
+
+    # Editor dello slot (layout libero, 480x480)
+    - id: slot_edit_page
+      styles: page_style
+      widgets:
+        - label:
+            id: edit_title
+            x: 15
+            y: 10
+            text_font: nunito_24
+            text_color: $label_on_color
+            text: "Slot"
+        - button:
+            id: edit_type_t
+            x: 10
+            y: 46
+            width: 147
+            height: 46
+            radius: 12
+            pad_all: 0
+            widgets:
+              - label:
+                  align: center
+                  text_color: $label_on_color
+                  text: "On/Off"
+            on_click:
+              - lambda: |-
+                  hmi_slots::edit_type = 't';
+                  hmi_slots::editor_fill(id(edit_roller)->obj, id(edit_info));
+              - script.execute: slot_editor_type_refresh
+        - button:
+            id: edit_type_s
+            x: 167
+            y: 46
+            width: 147
+            height: 46
+            radius: 12
+            pad_all: 0
+            widgets:
+              - label:
+                  align: center
+                  text_color: $label_on_color
+                  text: "Sensore"
+            on_click:
+              - lambda: |-
+                  hmi_slots::edit_type = 's';
+                  hmi_slots::editor_fill(id(edit_roller)->obj, id(edit_info));
+              - script.execute: slot_editor_type_refresh
+        - button:
+            id: edit_type_c
+            x: 324
+            y: 46
+            width: 147
+            height: 46
+            radius: 12
+            pad_all: 0
+            widgets:
+              - label:
+                  align: center
+                  text_color: $label_on_color
+                  text: "Telecamera"
+            on_click:
+              - lambda: |-
+                  hmi_slots::edit_type = 'c';
+                  hmi_slots::editor_fill(id(edit_roller)->obj, id(edit_info));
+              - script.execute: slot_editor_type_refresh
+        - label:
+            id: edit_info
+            x: 15
+            y: 98
+            text_font: nunito_14
+            text_color: $label_off_color
+            text: ""
+        - roller:
+            id: edit_roller
+            x: 10
+            y: 122
+            width: 360
+            height: 266
+            radius: 12
+            border_width: 0
+            bg_color: very_dark_gray
+            bg_opa: cover
+            text_font: nunito_20
+            text_color: $label_off_color
+            text_align: left
+            options: ["..."]
+            selected:
+              bg_color: $button_on_color
+              text_color: $label_on_color
+        - roller:
+            id: edit_icon_roller
+            x: 380
+            y: 122
+            width: 90
+            height: 266
+            radius: 12
+            border_width: 0
+            bg_color: very_dark_gray
+            bg_opa: cover
+            text_font: mdi_slot_icons_40
+            text_color: $icon_off_color
+            options: [" "]
+            selected:
+              bg_color: $button_on_color
+              text_color: $icon_on_color
+        - button:
+            x: 10
+            y: 400
+            width: 145
+            height: 66
+            radius: 15
+            bg_color: $button_on_color
+            widgets:
+              - label:
+                  align: center
+                  text_color: $label_on_color
+                  text: "Avanti"
+            on_click:
+              - if:
+                  condition:
+                    lambda: 'return hmi_slots::editor_prepare_name(id(edit_roller)->obj, id(slot_name_ta), id(slot_name_hint));'
+                  then:
+                    - lvgl.page.show: slot_name_page
+                  else:
+                    - lvgl.label.update:
+                        id: edit_info
+                        text: "Nessuna entita' selezionabile"
+        - button:
+            x: 167
+            y: 400
+            width: 145
+            height: 66
+            radius: 15
+            widgets:
+              - label:
+                  align: center
+                  text_color: $label_on_color
+                  text: "Svuota"
+            on_click:
+              - lambda: 'hmi_slots::editor_clear();'
+              - script.execute: slot_editor_close
+        - button:
+            x: 324
+            y: 400
+            width: 145
+            height: 66
+            radius: 15
+            widgets:
+              - label:
+                  align: center
+                  text_color: $label_on_color
+                  text: "Annulla"
+            on_click:
+              - script.execute: slot_editor_close
+
+    # Nome breve dello slot (dopo "Avanti" nell'editor), con tastiera a schermo
+    - id: slot_name_page
+      styles: page_style
+      widgets:
+        - label:
+            x: 15
+            y: 10
+            text_font: nunito_24
+            text_color: $label_on_color
+            text: "Nome sul pulsante"
+        - label:
+            id: slot_name_hint
+            x: 15
+            y: 44
+            width: 450
+            long_mode: dot
+            text_font: nunito_14
+            text_color: $label_off_color
+            text: ""
+        - textarea:
+            id: slot_name_ta
+            x: 10
+            y: 68
+            width: 460
+            height: 58
+            radius: 12
+            one_line: true
+            max_length: 24
+            text_font: nunito_24
+            text_color: $label_on_color
+            bg_color: very_dark_gray
+            bg_opa: cover
+            border_width: 2
+            border_color: $button_on_color
+            placeholder_text: "Nome (vuoto = nome completo)"
+        - button:
+            x: 10
+            y: 134
+            width: 145
+            height: 54
+            radius: 15
+            widgets:
+              - label:
+                  align: center
+                  text_color: $label_on_color
+                  text: "Indietro"
+            on_click:
+              - lvgl.page.show: slot_edit_page
+        - button:
+            x: 167
+            y: 134
+            width: 145
+            height: 54
+            radius: 15
+            widgets:
+              - label:
+                  align: center
+                  text_color: $label_on_color
+                  text: "Originale"
+            on_click:
+              - lambda: 'hmi_slots::editor_reset_name(id(slot_name_ta));'
+        - button:
+            x: 324
+            y: 134
+            width: 145
+            height: 54
+            radius: 15
+            bg_color: $button_on_color
+            widgets:
+              - label:
+                  align: center
+                  text_color: $label_on_color
+                  text: "Salva"
+            on_click:
+              - script.execute: slot_name_save
+        - keyboard:
+            id: slot_name_kb
+            textarea: slot_name_ta
+            mode: TEXT_LOWER
+            # LVGL allinea la tastiera in basso: x/y sono spostamenti da lì
+            align: bottom_mid
+            x: 0
+            y: 0
+            width: 480
+            height: 284
+            items:
+              text_font: montserrat_20
+            on_ready:
+              - script.execute: slot_name_save
+            on_cancel:
+              - lvgl.page.show: slot_edit_page

@@ -1,0 +1,178 @@
+---
+sun:
+  latitude: !secret latitude
+  longitude: !secret longitude
+  id: home_sun
+  on_sunset:
+    - elevation: -3.5°
+      then:
+        - select.set:
+            id: brightness_mode
+            option: "Evening"
+  on_sunrise:
+    - then:
+        - select.set:
+            id: brightness_mode
+            option: "Day"
+
+time:
+  - platform: homeassistant
+    id: system_time
+    on_time_sync:
+      - script.execute: time_update
+      - if:
+          condition:
+            lambda: 'return id(device_last_restart).state == "";'
+          then:
+            - text_sensor.template.publish:
+                id: device_last_restart
+                state: !lambda 'return id(system_time).now().strftime("%a %d %b %Y - %H:%M:%S");'
+            - script.execute: set_brightness_mode_by_time
+    on_time:
+      - seconds: 0
+        minutes: $screen_night_minute
+        hours: $screen_night_hour
+        then:
+          - select.set:
+              id: brightness_mode
+              option: "Night"
+      - minutes: '*'
+        seconds: 0
+        then:
+          - script.execute: time_update
+          # se lo schermo è in standby, riprende un attimo LVGL per ridisegnare l'ora
+          - if:
+              condition: lvgl.is_paused
+              then:
+                - lvgl.resume:
+                - delay: 2s
+                - lvgl.pause:
+
+
+# Wake on screen touch
+touchscreen:
+    on_touch:
+      then:
+        - script.execute: backlight_timeout_off
+        - logger.log: "LVGL is active"
+        - lvgl.resume
+        - lvgl.widget.redraw
+        - if:
+            condition:
+              - lambda: 'return id(brightness_mode).current_option() == "Day";'
+            then:
+              - light.turn_on:
+                  id: display_backlight
+                  brightness: !lambda 'return id(touchscreen_daytime_brightness) / 100.0;' #${touchscreen_daytime_brightness}
+        - if:
+            condition:
+              - lambda: 'return id(brightness_mode).current_option() == "Evening";'
+            then:
+              - light.turn_on:
+                  id: display_backlight
+                  brightness: !lambda 'return id(touchscreen_evening_brightness) / 100.0;' #${touchscreen_evening_brightness}
+        - if:
+            condition:
+              - lambda: 'return id(brightness_mode).current_option() == "Night";'
+            then:
+              - light.turn_on:
+                  id: display_backlight
+                  brightness: !lambda 'return id(touchscreen_nighttime_brightness) / 100.0;' #${touchscreen_nighttime_brightness}
+
+select:
+  - platform: template
+    name: "Brightness mode"
+    id: brightness_mode
+    icon: mdi:television-shimmer
+    optimistic: true
+    options:
+      - Day
+      - Evening
+      - Night
+    initial_option: Night
+    on_value:
+      then:
+        - script.execute: backlight_timeout_off
+        - lvgl.resume
+        - lvgl.widget.redraw
+        - if:
+            condition:
+              - lambda: 'return id(brightness_mode).current_option() == "Day";'
+            then:
+              - light.turn_on:
+                  id: display_backlight
+                  brightness: !lambda 'return id(touchscreen_daytime_brightness) / 100.0;'
+        - if:
+            condition:
+              - lambda: 'return id(brightness_mode).current_option() == "Evening";'
+            then:
+              - light.turn_on:
+                  id: display_backlight
+                  brightness: !lambda 'return id(touchscreen_evening_brightness) / 100.0;'
+        - if:
+            condition:
+              - lambda: 'return id(brightness_mode).current_option() == "Night";'
+            then:
+              - light.turn_on:
+                  id: display_backlight
+                  brightness: !lambda 'return id(touchscreen_nighttime_brightness) / 100.0;'
+
+script: 
+  - id: backlight_timeout_off 
+    mode: restart 
+    then: 
+      - delay: !lambda 'return id(touchscreen_idle_timeout_sec) * 1000;'
+      - logger.log: "Backlight timeout reached"
+
+      # Modalità DAY
+      - if:
+          condition:
+            lambda: 'return id(brightness_mode).current_option() == "Day";'
+          then:
+            - light.turn_on:
+                id: display_backlight
+                brightness: !lambda 'return id(touchscreen_standby_day) / 100.0;'
+
+      # Modalità EVENING
+      - if:
+          condition:
+            lambda: 'return id(brightness_mode).current_option() == "Evening";'
+          then:
+            - light.turn_on:
+                id: display_backlight
+                brightness: !lambda 'return id(touchscreen_standby_evening) / 100.0;'
+
+      # Modalità NIGHT
+      - if:
+          condition:
+            lambda: 'return id(brightness_mode).current_option() == "Night";'
+          then:
+            - light.turn_on:
+                id: display_backlight
+                brightness: !lambda 'return id(touchscreen_standby_night) / 100.0;'
+
+      # Schermata di blocco, poi pausa di LVGL (in quest'ordine: se LVGL va in pausa
+      # prima, il suo on_idle non scatta più e la schermata di blocco non compare)
+      - lvgl.page.show: screen_saver_page
+      - delay: 500ms
+      - lvgl.pause:
+          show_snow: false
+
+  # Imposta la modalità in base all'ora: Day 6-18, Evening 18-notte, Night da
+  # ${screen_night_hour}:${screen_night_minute} alle 6 (stessa ora usata da on_time)
+  - id: set_brightness_mode_by_time
+    then:
+      - lambda: |-
+          auto now = id(system_time).now();
+          if (!now.is_valid()) return;   // ora non ancora sincronizzata
+          int m = now.hour * 60 + now.minute;
+          int night = atoi("${screen_night_hour}") * 60 + atoi("${screen_night_minute}");
+          std::string mode;
+          if (m >= 6 * 60 && m < 18 * 60) mode = "Day";
+          else if (m >= 18 * 60 && m < night) mode = "Evening";
+          else mode = "Night";
+          if (id(brightness_mode).current_option() != mode) {
+            auto call = id(brightness_mode).make_call();
+            call.set_option(mode);
+            call.perform();
+          }

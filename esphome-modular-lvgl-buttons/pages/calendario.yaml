@@ -1,0 +1,157 @@
+---
+# Pagina "Calendario": mese corrente con un pallino colorato (colore del calendario)
+# per ogni evento; toccando un giorno si aprono i dettagli. Solo visualizzazione.
+#
+# vars:
+#    ha_calendar_sensor: sensore template con gli eventi (default sensor.hmi_calendario,
+#                        vedi homeassistant/hmi_template.yaml; colori e calendari si
+#                        cambiano lì, senza riprogrammare il display)
+#    time_id:            componente time del display (default system_time)
+#
+# Il pulsante per aprire la pagina va aggiunto nel file del display (page_button
+# con click_page: calendario_page).
+
+esphome:
+  includes:
+    - esphome-modular-lvgl-buttons/custom_components/hmi_calendar.h
+  on_boot:
+    - priority: -100
+      then:
+        - lambda: |-
+            hmi_calendar::build(id(cal_grid), id(cal_title), id(cal_detail), id(cal_detail_title),
+                                id(cal_detail_list), id(nunito_14)->get_lv_font(), id(nunito_20)->get_lv_font());
+        - script.execute: calendario_render
+
+script:
+  - id: calendario_render
+    then:
+      - lambda: |-
+          auto now = id(${time_id | default('system_time')}).now();
+          std::string ym = now.is_valid() ? now.strftime("%Y-%m") : std::string();
+          hmi_calendar::render(ym, now.is_valid() ? now.day_of_month : 0);
+
+# Aggiorna l'evidenziazione di "oggi" a cambio giorno
+interval:
+  - interval: 60s
+    then:
+      - lambda: |-
+          static int last_day = -1;
+          auto now = id(${time_id | default('system_time')}).now();
+          if (!now.is_valid() || now.day_of_month == last_day) return;
+          last_day = now.day_of_month;
+          id(calendario_render).execute();
+
+text_sensor:
+  - platform: homeassistant
+    id: ha_cal_mese
+    entity_id: ${ha_calendar_sensor | default('sensor.hmi_calendario')}
+    attribute: mese
+    internal: true
+    on_value:
+      - lambda: 'hmi_calendar::set_month(x);'
+      - script.execute: calendario_render
+  - platform: homeassistant
+    id: ha_cal_calendari
+    entity_id: ${ha_calendar_sensor | default('sensor.hmi_calendario')}
+    attribute: calendari
+    internal: true
+    on_value:
+      - lambda: 'hmi_calendar::set_calendars(x);'
+      - script.execute: calendario_render
+  - platform: homeassistant
+    id: ha_cal_eventi
+    entity_id: ${ha_calendar_sensor | default('sensor.hmi_calendario')}
+    attribute: eventi
+    internal: true
+    on_value:
+      - lambda: 'hmi_calendar::set_events(x);'
+      - script.execute: calendario_render
+
+lvgl:
+  pages:
+    - id: calendario_page
+      styles: page_style
+      widgets:
+        - label:
+            id: cal_title
+            x: 15
+            y: 12
+            text_font: nunito_24
+            text_color: $label_on_color
+            text: "Calendario"
+        - button:
+            x: 370
+            y: 6
+            width: 100
+            height: 44
+            radius: 12
+            pad_all: 0
+            widgets:
+              - label:
+                  align: center
+                  text_color: $label_on_color
+                  text: "Home"
+            on_click:
+              - lambda: 'hmi_calendar::detail_close();'
+              - lvgl.page.show: main_page
+        # Griglia (popolata da hmi_calendar::build)
+        - obj:
+            id: cal_grid
+            x: 6
+            y: 58
+            width: 468
+            height: 400
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            scrollable: false
+        # Pannello dettagli del giorno (sopra la griglia, nascosto)
+        - obj:
+            id: cal_detail
+            x: 0
+            y: 0
+            width: 480
+            height: 480
+            bg_color: 0x000000
+            bg_opa: cover
+            border_width: 0
+            radius: 0
+            pad_all: 0
+            hidden: true
+            clickable: true
+            scrollable: false
+            widgets:
+              - label:
+                  id: cal_detail_title
+                  x: 15
+                  y: 12
+                  width: 340
+                  long_mode: dot
+                  text_font: nunito_24
+                  text_color: $label_on_color
+                  text: ""
+              - button:
+                  x: 370
+                  y: 6
+                  width: 100
+                  height: 44
+                  radius: 12
+                  pad_all: 0
+                  widgets:
+                    - label:
+                        align: center
+                        text_color: $label_on_color
+                        text: "Chiudi"
+                  on_click:
+                    - lambda: 'hmi_calendar::detail_close();'
+              - obj:
+                  id: cal_detail_list
+                  x: 10
+                  y: 60
+                  width: 460
+                  height: 410
+                  bg_opa: TRANSP
+                  border_width: 0
+                  pad_all: 0
+                  scrollable: true
+                  scrollbar_mode: auto

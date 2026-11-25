@@ -1,0 +1,255 @@
+---
+# Previsioni meteo (oggi, domani, dopodomani) sulla schermata di blocco.
+# I dati arrivano da sensor.hmi_meteo (attributo "giorni"), definito in
+# homeassistant/hmi_template.yaml: "condizione;minima;massima|..." per 3 giorni.
+#
+# vars (opzionali):
+#    meteo_y:             spostamento verticale del blocco rispetto al centro (default 0;
+#                         negativo = più in alto)
+#    meteo_color_giorno:  colore del nome del giorno (default deep_orange)
+#    meteo_color_icona:   colore dell'icona (default deep_orange)
+#    meteo_color_temp:    colore di minima/massima (default light_blue)
+#
+# Ogni colonna: nome del giorno ruotato a 270° sul fianco sinistro, icona al centro,
+# minima/massima ruotate a 90° sul fianco destro.
+
+text_sensor:
+  - platform: homeassistant
+    id: ha_meteo_giorni
+    entity_id: sensor.hmi_meteo
+    attribute: giorni
+    internal: true
+    on_value:
+      - lambda: |-
+          static const char *const GIORNI[] = {"Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"};
+          lv_obj_t *nomi[3] = {id(meteo_giorno_0), id(meteo_giorno_1), id(meteo_giorno_2)};
+          lv_obj_t *icone[3] = {id(meteo_icona_0), id(meteo_icona_1), id(meteo_icona_2)};
+          lv_obj_t *temp[3] = {id(meteo_temp_0), id(meteo_temp_1), id(meteo_temp_2)};
+
+          // Icona MDI per ogni condizione meteo di Home Assistant
+          auto icona = [](const std::string &c) -> const char * {
+            if (c == "sunny") return "${mdi_weather_sunny}";
+            if (c == "clear-night") return "${mdi_weather_night}";
+            if (c == "partlycloudy") return "${mdi_weather_partly_cloudy}";
+            if (c == "cloudy") return "${mdi_weather_cloudy}";
+            if (c == "fog") return "${mdi_weather_fog}";
+            if (c == "hail") return "${mdi_weather_hail}";
+            if (c == "lightning") return "${mdi_weather_lightning}";
+            if (c == "lightning-rainy") return "${mdi_weather_lightning_rainy}";
+            if (c == "pouring") return "${mdi_weather_pouring}";
+            if (c == "rainy") return "${mdi_weather_rainy}";
+            if (c == "snowy") return "${mdi_weather_snowy}";
+            if (c == "snowy-rainy") return "${mdi_weather_snowy_rainy}";
+            if (c == "windy") return "${mdi_weather_windy}";
+            if (c == "windy-variant") return "${mdi_weather_windy_variant}";
+            if (c == "exceptional") return "${mdi_weather_cloudy_alert}";
+            return "${mdi_alert_circle_outline}";
+          };
+
+          // Nomi dei giorni: Oggi, Domani, poi il giorno della settimana
+          auto now = id(system_time).now();
+          int dopodomani = now.is_valid() ? (now.day_of_week - 1 + 2) % 7 : -1;
+
+          // Divide "c;min;max|c;min;max|c;min;max"
+          std::vector<std::string> giorni;
+          size_t start = 0;
+          while (true) {
+            size_t p = x.find('|', start);
+            giorni.push_back(x.substr(start, p == std::string::npos ? std::string::npos : p - start));
+            if (p == std::string::npos) break;
+            start = p + 1;
+          }
+
+          for (int k = 0; k < 3; k++) {
+            lv_label_set_text(nomi[k], k == 0 ? "Oggi" : k == 1 ? "Domani" : (dopodomani >= 0 ? GIORNI[dopodomani] : ""));
+            std::string c, lo, hi;
+            if (k < (int) giorni.size()) {
+              const std::string &g = giorni[k];
+              size_t a = g.find(';'), b = (a == std::string::npos) ? a : g.find(';', a + 1);
+              if (b != std::string::npos) {
+                c = g.substr(0, a);
+                lo = g.substr(a + 1, b - a - 1);
+                hi = g.substr(b + 1);
+              }
+            }
+            if (c.empty()) {
+              lv_label_set_text(icone[k], "${mdi_alert_circle_outline}");
+              lv_label_set_text(temp[k], "--");
+            } else {
+              lv_label_set_text(icone[k], icona(c));
+              std::string t = lo + "° / " + hi + "°";
+              lv_label_set_text(temp[k], t.c_str());
+            }
+          }
+
+font:
+  - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
+    id: mdi_meteo_80
+    size: 80
+    bpp: 8
+    glyphs: [
+      $mdi_weather_sunny, $mdi_weather_night, $mdi_weather_partly_cloudy,
+      $mdi_weather_cloudy, $mdi_weather_fog, $mdi_weather_hail, $mdi_weather_lightning,
+      $mdi_weather_lightning_rainy, $mdi_weather_pouring, $mdi_weather_rainy,
+      $mdi_weather_snowy, $mdi_weather_snowy_rainy, $mdi_weather_windy,
+      $mdi_weather_windy_variant, $mdi_weather_cloudy_alert, $mdi_alert_circle_outline,
+    ]
+  # Testo con il simbolo dei gradi
+  - file: "gfonts://Nunito@600"
+    id: meteo_testo_26
+    size: 26
+    bpp: 8
+    glyphsets: [GF_Latin_Core]
+
+lvgl:
+  pages:
+    - id: !extend screen_saver_page
+      widgets:
+        - obj:
+            id: meteo_box
+            align: center
+            y: ${meteo_y | default(0)}
+            width: 474
+            height: 140
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            clickable: false
+            scrollable: false
+            scrollbar_mode: "off"
+            widgets:
+              - obj:
+                  id: meteo_col_0
+                  align: center
+                  x: -158
+                  width: 158
+                  height: 140
+                  bg_opa: TRANSP
+                  clickable: false
+                  # le etichette ruotate sporgono: niente scorrimento/barre
+                  scrollable: false
+                  scrollbar_mode: "off"
+                  widgets:
+                    # nome del giorno, verticale sul fianco sinistro
+                    - label:
+                        id: meteo_giorno_0
+                        align: left_mid
+                        x: -47
+                        width: 130
+                        text_align: center
+                        transform_rotation: 270
+                        transform_pivot_x: 50%
+                        transform_pivot_y: 50%
+                        text_font: meteo_testo_26
+                        text_color: ${meteo_color_giorno | default('deep_orange')}
+                        text: "Oggi"
+                    # icona grande al centro
+                    - label:
+                        id: meteo_icona_0
+                        align: center
+                        text_font: mdi_meteo_80
+                        text_color: ${meteo_color_icona | default('deep_orange')}
+                        text: $mdi_alert_circle_outline
+                    # minima / massima, verticale sul fianco destro
+                    - label:
+                        id: meteo_temp_0
+                        align: right_mid
+                        x: 47
+                        width: 130
+                        text_align: center
+                        transform_rotation: 270
+                        transform_pivot_x: 50%
+                        transform_pivot_y: 50%
+                        text_font: meteo_testo_26
+                        text_color: ${meteo_color_temp | default('light_blue')}
+                        text: "--"
+              - obj:
+                  id: meteo_col_1
+                  align: center
+                  x: 0
+                  width: 158
+                  height: 140
+                  bg_opa: TRANSP
+                  clickable: false
+                  # le etichette ruotate sporgono: niente scorrimento/barre
+                  scrollable: false
+                  scrollbar_mode: "off"
+                  widgets:
+                    # nome del giorno, verticale sul fianco sinistro
+                    - label:
+                        id: meteo_giorno_1
+                        align: left_mid
+                        x: -47
+                        width: 130
+                        text_align: center
+                        transform_rotation: 270
+                        transform_pivot_x: 50%
+                        transform_pivot_y: 50%
+                        text_font: meteo_testo_26
+                        text_color: ${meteo_color_giorno | default('deep_orange')}
+                        text: "Domani"
+                    # icona grande al centro
+                    - label:
+                        id: meteo_icona_1
+                        align: center
+                        text_font: mdi_meteo_80
+                        text_color: ${meteo_color_icona | default('deep_orange')}
+                        text: $mdi_alert_circle_outline
+                    # minima / massima, verticale sul fianco destro
+                    - label:
+                        id: meteo_temp_1
+                        align: right_mid
+                        x: 47
+                        width: 130
+                        text_align: center
+                        transform_rotation: 270
+                        transform_pivot_x: 50%
+                        transform_pivot_y: 50%
+                        text_font: meteo_testo_26
+                        text_color: ${meteo_color_temp | default('light_blue')}
+                        text: "--"
+              - obj:
+                  id: meteo_col_2
+                  align: center
+                  x: 158
+                  width: 158
+                  height: 140
+                  bg_opa: TRANSP
+                  clickable: false
+                  # le etichette ruotate sporgono: niente scorrimento/barre
+                  scrollable: false
+                  scrollbar_mode: "off"
+                  widgets:
+                    # nome del giorno, verticale sul fianco sinistro
+                    - label:
+                        id: meteo_giorno_2
+                        align: left_mid
+                        x: -47
+                        width: 130
+                        text_align: center
+                        transform_rotation: 270
+                        transform_pivot_x: 50%
+                        transform_pivot_y: 50%
+                        text_font: meteo_testo_26
+                        text_color: ${meteo_color_giorno | default('deep_orange')}
+                        text: ""
+                    # icona grande al centro
+                    - label:
+                        id: meteo_icona_2
+                        align: center
+                        text_font: mdi_meteo_80
+                        text_color: ${meteo_color_icona | default('deep_orange')}
+                        text: $mdi_alert_circle_outline
+                    # minima / massima, verticale sul fianco destro
+                    - label:
+                        id: meteo_temp_2
+                        align: right_mid
+                        x: 47
+                        width: 130
+                        text_align: center
+                        transform_rotation: 270
+                        transform_pivot_x: 50%
+                        transform_pivot_y: 50%
+                        text_font: meteo_testo_26
+                        text_color: ${meteo_color_temp | default('light_blue')}
+                        text: "--"

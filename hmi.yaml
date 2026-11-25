@@ -1,0 +1,327 @@
+# HMI touch 480x480 (Guition ESP32-S3-4848S040) per Home Assistant.
+# Prima di compilare: copia secrets.yaml.example in secrets.yaml e compilalo,
+# poi adatta le substitutions qui sotto. Lato HA serve homeassistant/hmi_template.yaml.
+
+substitutions:
+  device_name: hmi-display          # nome del dispositivo in ESPHome/HA
+  friendly_name: HMI Display
+  # Sensori esterni mostrati sulla schermata di blocco (righe "Est")
+  outdoor_temp_entity: sensor.temperatura_esterna
+  outdoor_hum_entity: sensor.umidita_esterna
+  icon_font: mdi_slot_icons_40
+  text_font: nunito_20
+  button_on_color: "ep_orange"
+  button_off_color: "very_dark_gray"
+  icon_on_color: "yellow"
+  icon_off_color: "gray"
+  label_on_color: "white"
+  label_off_color: "gray"
+  screen_night_hour: '21'
+  screen_night_minute: '00'
+  screen_height: '480'
+  screen_width: '480'
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  comment: "Guition ESP32-S3-4848S040 480px * 480px Smart Screen"
+  on_boot:
+    - priority: 400
+      then:
+        - script.execute: update_loading_page
+        - script.execute: ha_connection_timeout
+
+
+# Guition ESP32-S3-4848S040 480px X 480px Smart Screen
+esp32:
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    advanced:
+       execute_from_psram: true
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+preferences:
+  flash_write_interval: 5min
+
+logger:
+  level: debug
+
+globals:
+  - id: touchscreen_daytime_brightness
+    type: int
+    restore_value: True
+    initial_value: '100'   # percentuale
+  - id: touchscreen_evening_brightness
+    type: int
+    restore_value: True
+    initial_value: '80'
+  - id: touchscreen_nighttime_brightness
+    type: int
+    restore_value: True
+    initial_value: '70'
+  - id: touchscreen_standby_day
+    type: int
+    restore_value: True
+    initial_value: '50'
+  - id: touchscreen_standby_evening
+    type: int
+    restore_value: True
+    initial_value: '40'
+  - id: touchscreen_standby_night
+    type: int
+    restore_value: True
+    initial_value: '30'
+  - id: touchscreen_idle_timeout_sec
+    type: int
+    restore_value: True
+    initial_value: '30'   # secondi
+
+# Aggiorna le etichette dell'ora (eseguito ogni minuto e alla sincronizzazione dell'ora)
+script:
+  - id: time_update
+    then:
+      - lvgl.label.update:
+          id: time_label
+          text: !lambda 'return id(system_time).now().strftime("%H:%M");'
+      - lvgl.label.update:
+          id: screen_saver_time_label
+          text: !lambda 'return id(system_time).now().strftime("%H:%M");'
+
+button:
+  - platform: restart
+    id: restart_button
+    name: "HMI Restart"
+
+packages:
+  - !include esphome-modular-lvgl-buttons/common/wifi.yaml
+  - !include esphome-modular-lvgl-buttons/common/ota.yaml
+  - !include esphome-modular-lvgl-buttons/common/color.yaml
+  - !include esphome-modular-lvgl-buttons/common/fonts.yaml
+  - !include esphome-modular-lvgl-buttons/common/mdi_glyph_substitutions.yaml
+  - !include esphome-modular-lvgl-buttons/sensors/sensors_base.yaml
+  - !include esphome-modular-lvgl-buttons/common/theme_style.yaml
+  - !include esphome-modular-lvgl-buttons/common/backlight_time.yaml
+  - !include esphome-modular-lvgl-buttons/hardware/guition-esp32-s3-4848s040.yaml
+  - !include esphome-modular-lvgl-buttons/pages/loading_480px.yaml
+# Home e pagina Dispositivi: slot configurabili dal display
+# (stato slot in sensor.hmi_slot_stati, elenchi entità in sensor.hmi_entita_*)
+  - !include {
+    file: esphome-modular-lvgl-buttons/pages/dispositivi.yaml,
+    vars: { ha_prefix: hmi, ha_list_prefix: hmi } }
+# Calendario (mese corrente, eventi da sensor.hmi_calendario)
+  - !include esphome-modular-lvgl-buttons/pages/calendario.yaml
+  - !include {
+    file: esphome-modular-lvgl-buttons/buttons/page_button.yaml,
+    vars: {
+      page_id: main_page,
+      uid: button_calendario,
+      row: 3, column: 2,
+      text: Calendario,
+      icon_font: mdi_icons_80,
+      icon: $mdi_calendar_month,
+      click_page: calendario_page } }
+# Meteo (prossimi 3 giorni) sulla schermata di blocco
+  - !include {
+    file: esphome-modular-lvgl-buttons/pages/meteo.yaml,
+    vars: { meteo_y: -45 } }
+  - !include {
+    file: esphome-modular-lvgl-buttons/buttons/page_button.yaml,
+    vars: {
+      page_id: main_page,
+      uid: button_dispositivi,
+      row: 3, column: 1,
+      text: Dispositivi,
+      icon_font: mdi_icons_80,
+      icon: $mdi_view_grid,
+      click_page: dispositivi_page } }
+# Ora in home (apre la pagina info)
+  - !include {
+    file: esphome-modular-lvgl-buttons/buttons/time_button.yaml,
+    vars: {
+      page_id: main_page,
+      uid: button_time,
+      row: 3, column: 3,
+      text: 00:00,
+      icon: $mdi_clock,
+      click_page: info_screen } }
+# Config: Luce, Info, Home
+  - !include {
+    file: esphome-modular-lvgl-buttons/buttons/page_button.yaml,
+    vars: {
+      page_id: main_page,
+      uid: button_main_config,
+      row: 3, column: 0,
+      text: Config,
+      icon_font: mdi_icons_80,
+      icon: $mdi_cog,
+      click_page: main_config_page } }
+  - !include {
+    file: esphome-modular-lvgl-buttons/pages/brightness_config.yaml,
+    vars: {
+      page_id: brightness_config_page } }
+  - !include {
+    file: esphome-modular-lvgl-buttons/buttons/page_button.yaml,
+    vars: {
+      page_id: main_config_page,
+      uid: button_light_config,
+      row: 0, column: 0,
+      text: Light,
+      icon_font: mdi_icons_80,
+      icon: $mdi_cog,
+      click_page: brightness_config_page } }
+  - !include esphome-modular-lvgl-buttons/pages/info.yaml
+  - !include {
+    file: esphome-modular-lvgl-buttons/buttons/page_button.yaml,
+    vars: {
+      page_id: main_config_page,
+      uid: button_info,
+      row: 3, column: 0,
+      text: Info screen,
+      icon_font: mdi_icons_80,
+      icon: $mdi_information_box,
+      click_page: info_screen } }
+  - !include {
+    file: esphome-modular-lvgl-buttons/buttons/page_button.yaml,
+    vars: {
+      page_id: main_config_page,
+      uid: main_config_page_home,
+      row: 3, column: 3,
+      text: Home,
+      icon_font: mdi_icons_80,
+      icon: $mdi_home,
+      click_page: main_page } }
+
+
+# Temperatura/umidità esterna per la schermata di blocco
+sensor:
+  - platform: homeassistant
+    id: ha_label_t_ext
+    entity_id: ${outdoor_temp_entity}
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: label_t_ext
+          text: !lambda |-
+            if (std::isnan(x)) return std::string("--");
+            char buffer[16];
+            snprintf(buffer, sizeof(buffer), "%.1f", x);
+            return std::string(buffer);
+  - platform: homeassistant
+    id: ha_label_h_ext
+    entity_id: ${outdoor_hum_entity}
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: label_h_ext
+          text: !lambda |-
+            if (std::isnan(x)) return std::string("--");
+            char buffer[16];
+            snprintf(buffer, sizeof(buffer), "%.1f", x);
+            return std::string(buffer);
+
+lvgl:
+  pages:
+    - id: main_page
+      styles: page_style
+      layout: 4x4
+
+    - id: main_config_page
+      styles: page_style
+      layout: 4x4
+
+    - id: brightness_config_page
+      styles: page_style
+      layout: 4x4
+
+    # Schermata di blocco: ora, temperatura/umidità interna ed esterna.
+    # Compare dopo 30 s di inattività, si chiude toccandola.
+    - id: screen_saver_page
+      widgets:
+        # sfondo a gradiente; toccandolo si torna alla home
+        - obj:
+            x: 0
+            y: 0
+            width: 480
+            height: 480
+            radius: 0
+            border_width: 0
+            bg_color: 0x1C2230
+            bg_grad_color: 0x05070A
+            bg_grad_dir: VER
+            bg_opa: cover
+            clickable: true
+            on_click:
+              then:
+                - lvgl.page.show: main_page
+        - label:
+            bg_opa: TRANSP
+            align: bottom_mid
+            id: screen_saver_time_label
+            text_font: nunito_110
+            text_color: burlywood
+            text: '24:00'
+        - label:
+            bg_opa: TRANSP
+            align: top_left
+            id: screen_saver_temp_label
+            text_font: nunito_48
+            text_color: burlywood
+            text: '--'
+        - label:
+            bg_opa: TRANSP
+            align: top_mid
+            id: screen_saver_desc_1
+            text_font: nunito_48
+            text_color: burlywood
+            text: Int
+        - label:
+            bg_opa: TRANSP
+            align: top_right
+            id: screen_saver_hum_label
+            text_font: nunito_48
+            text_color: burlywood
+            text: '--'
+
+        - label:
+            bg_opa: TRANSP
+            align: top_left
+            y: 65
+            id: label_t_ext
+            text_font: nunito_48
+            text_color: burlywood
+            text: '--'
+        - label:
+            bg_opa: TRANSP
+            align: top_mid
+            y: 65
+            id: screen_saver_desc_2
+            text_font: nunito_48
+            text_color: burlywood
+            text: Est
+        - label:
+            bg_opa: TRANSP
+            align: top_right
+            y: 65
+            id: label_h_ext
+            text_font: nunito_48
+            text_color: burlywood
+            text: '--'
+
+  on_idle:
+    - timeout: 30s
+      then:
+        - lvgl.page.show: screen_saver_page
+
+# Icone MDI usate dai pulsanti fissi (aggiungi qui eventuali nuove icone)
+font:
+  # http://materialdesignicons.com/cdn/7.4.47/
+  - file: 'https://github.com/Templarian/MaterialDesign-Webfont/raw/v7.4.47/fonts/materialdesignicons-webfont.ttf'
+    id: mdi_icons_80
+    size: 80
+    bpp: 8
+    glyphs: [$mdi_cog, $mdi_home, $mdi_information_box, $mdi_view_grid, $mdi_calendar_month]

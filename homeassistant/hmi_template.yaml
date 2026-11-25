@@ -1,0 +1,210 @@
+# Sensori template di Home Assistant per l'HMI (vedi README).
+#
+# Installazione: copia questo file in /config e aggiungi a configuration.yaml
+#     template: !include hmi_template.yaml
+# poi Strumenti per sviluppatori -> YAML -> "Entità template" (o riavvia HA).
+#
+# Il display legge:
+#   sensor.hmi_slot_stati        attributo "stati": stato di ogni slot "on|off|21.5 °C|..."
+#   sensor.hmi_entita_toggle     attributi "nomi"/"ids": entità on/off selezionabili
+#   sensor.hmi_entita_sensori    attributi "nomi"/"ids": sensori selezionabili
+#   sensor.hmi_meteo             previsioni per la schermata di blocco
+#   sensor.hmi_calendario        eventi del mese per la pagina Calendario
+#
+# La configurazione degli slot sta nelle entità text "Slot 1..24" del display
+# (formato  tipo;entity_id;etichetta;icona). Vengono cercate con il nome del
+# dispositivo: se in hmi.yaml cambi device_name (default hmi-display), cambia
+# 'hmi_display' qui sotto (trattini -> underscore). Il prefisso dell'area che HA
+# aggiunge agli entity_id non conta.
+
+- sensor:
+    - name: "HMI slot stati"
+      unique_id: hmi_slot_stati
+      icon: mdi:view-grid
+      state: >-
+        {%- set slot_ents = states.text | selectattr('entity_id', 'search', 'hmi_display_slot_[0-9]+$') | list -%}
+        {%- set ns = namespace(n=0) -%}
+        {%- for i in range(1, 25) -%}
+          {%- if ';' in (slot_ents | selectattr('entity_id', 'search', '_slot_' ~ i ~ '$') | map(attribute='state') | first | default('')) -%}{%- set ns.n = ns.n + 1 -%}{%- endif -%}
+        {%- endfor -%}
+        {{ ns.n }}
+      attributes:
+        stati: >-
+          {%- set slot_ents = states.text | selectattr('entity_id', 'search', 'hmi_display_slot_[0-9]+$') | list -%}
+          {%- set ns = namespace(out=[]) -%}
+          {%- for i in range(1, 25) -%}
+            {%- set p = (slot_ents | selectattr('entity_id', 'search', '_slot_' ~ i ~ '$') | map(attribute='state') | first | default('')).split(';') -%}
+            {%- if p | count >= 2 and p[1] != '' -%}
+              {%- set e = p[1] -%}
+              {%- set v = states(e) -%}
+              {%- if p[0] == 's' -%}
+                {%- set u = state_attr(e, 'unit_of_measurement') -%}
+                {%- if is_number(v) -%}{%- set v = v | float | round(1) -%}{%- endif -%}
+                {%- set ns.out = ns.out + [v ~ (' ' ~ u if u else '')] -%}
+              {%- elif p[0] == 'c' -%}
+                {%- set ns.out = ns.out + [''] -%}
+              {%- else -%}
+                {%- set ns.out = ns.out + [v] -%}
+              {%- endif -%}
+            {%- else -%}
+              {%- set ns.out = ns.out + [''] -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ ns.out | join('|') }}
+
+    # Entità on/off: switch, luci, ventole, input_boolean
+    - name: "HMI entita toggle"
+      unique_id: hmi_entita_toggle
+      icon: mdi:toggle-switch
+      state: >-
+        {{ (states.switch | list + states.light | list + states.fan | list + states.input_boolean | list) | count }}
+      attributes:
+        nomi: >-
+          {%- set ents = (states.switch | list + states.light | list + states.fan | list + states.input_boolean | list)
+                         | sort(attribute='entity_id') -%}
+          {{ ents | map(attribute='name') | map('replace', '\n', ' ') | join('\n') }}
+        ids: >-
+          {%- set ents = (states.switch | list + states.light | list + states.fan | list + states.input_boolean | list)
+                         | sort(attribute='entity_id') -%}
+          {{ ents | map(attribute='entity_id') | join('\n') }}
+
+    # Sensori numerici con device_class utile da mostrare sul display
+    - name: "HMI entita sensori"
+      unique_id: hmi_entita_sensori
+      icon: mdi:gauge
+      state: >-
+        {%- set dc = ['temperature','humidity','power','energy','current','voltage','pressure',
+                      'illuminance','battery','carbon_dioxide','pm25'] -%}
+        {{ states.sensor | selectattr('attributes.device_class', 'defined')
+                         | selectattr('attributes.device_class', 'in', dc) | list | count }}
+      attributes:
+        nomi: >-
+          {%- set dc = ['temperature','humidity','power','energy','current','voltage','pressure',
+                        'illuminance','battery','carbon_dioxide','pm25'] -%}
+          {%- set ents = states.sensor | selectattr('attributes.device_class', 'defined')
+                                       | selectattr('attributes.device_class', 'in', dc)
+                                       | sort(attribute='entity_id') | list -%}
+          {{ ents | map(attribute='name') | map('replace', '\n', ' ') | join('\n') }}
+        ids: >-
+          {%- set dc = ['temperature','humidity','power','energy','current','voltage','pressure',
+                        'illuminance','battery','carbon_dioxide','pm25'] -%}
+          {%- set ents = states.sensor | selectattr('attributes.device_class', 'defined')
+                                       | selectattr('attributes.device_class', 'in', dc)
+                                       | sort(attribute='entity_id') | list -%}
+          {{ ents | map(attribute='entity_id') | join('\n') }}
+
+# Previsioni meteo per la schermata di blocco degli HMI (aggiornate ogni 30 minuti).
+# Attributo "giorni": "condizione;minima;massima|..." per oggi, domani e dopodomani.
+- trigger:
+    - trigger: time_pattern
+      minutes: "/30"
+    - trigger: homeassistant
+      event: start
+    - trigger: event
+      event_type: event_template_reloaded
+  action:
+    - action: weather.get_forecasts
+      target:
+        entity_id: weather.forecast_home
+      data:
+        type: daily
+      response_variable: previsioni
+  sensor:
+    - name: "HMI meteo"
+      unique_id: hmi_meteo
+      icon: mdi:weather-partly-cloudy
+      state: "{{ states('weather.forecast_home') }}"
+      attributes:
+        giorni: >-
+          {%- set f = previsioni['weather.forecast_home'].forecast[:3] -%}
+          {%- set ns = namespace(out=[]) -%}
+          {%- for d in f -%}
+            {%- set lo = d.templow | default(d.temperature) | round(0) | int -%}
+            {%- set hi = d.temperature | round(0) | int -%}
+            {%- set ns.out = ns.out + [d.condition ~ ';' ~ lo ~ ';' ~ hi] -%}
+          {%- endfor -%}
+          {{ ns.out | join('|') }}
+
+# Calendario del mese corrente per gli HMI (pagina "Calendario", aggiornato ogni 15 minuti).
+# I calendari sono ESEMPI: sostituisci gli entity_id con i tuoi (nei trigger, in
+# calendar.get_events e nelle due liste "cals"). Nome e colore di ogni calendario
+# si cambiano nelle liste "cals": il display li legge da qui, senza riprogrammarlo.
+#   attributo "mese":      "AAAA-MM"
+#   attributo "calendari": "Nome;#colore|..."  (stesso ordine di "cals")
+#   attributo "eventi":    righe "cal|giorno_inizio|giorno_fine|ora|titolo|luogo"
+- trigger:
+    - trigger: time_pattern
+      minutes: "/15"
+    - trigger: homeassistant
+      event: start
+    - trigger: event
+      event_type: event_template_reloaded
+    - trigger: state
+      entity_id:
+        - calendar.personale
+        - calendar.lavoro
+        - calendar.compleanni
+  action:
+    - variables:
+        inizio_mese: "{{ today_at().replace(day=1).isoformat() }}"
+        fine_mese: "{{ (today_at().replace(day=28) + timedelta(days=4)).replace(day=1).isoformat() }}"
+    - action: calendar.get_events
+      target:
+        entity_id:
+          - calendar.personale
+          - calendar.lavoro
+          - calendar.compleanni
+      data:
+        start_date_time: "{{ inizio_mese }}"
+        end_date_time: "{{ fine_mese }}"
+      response_variable: agenda
+  sensor:
+    - name: "HMI calendario"
+      unique_id: hmi_calendario
+      icon: mdi:calendar-month
+      state: "{{ now().strftime('%Y-%m') }}"
+      attributes:
+        mese: "{{ now().strftime('%Y-%m') }}"
+        calendari: >-
+          {%- set cals = [['calendar.personale',  'Personale',  '#44739e'],
+                          ['calendar.lavoro',     'Lavoro',     '#984ea3'],
+                          ['calendar.compleanni', 'Compleanni', '#00d2d5']] -%}
+          {{ cals | map('join', ';') | map('regex_replace', '^[^;]*;', '') | join('|') }}
+        eventi: >-
+          {%- set cals = [['calendar.personale',  'Personale',  '#44739e'],
+                          ['calendar.lavoro',     'Lavoro',     '#984ea3'],
+                          ['calendar.compleanni', 'Compleanni', '#00d2d5']] -%}
+          {%- set primo = today_at().replace(day=1) -%}
+          {%- set prossimo = (primo.replace(day=28) + timedelta(days=4)).replace(day=1) -%}
+          {%- set m0 = primo.strftime('%Y-%m-%d') -%}
+          {%- set m1 = prossimo.strftime('%Y-%m-%d') -%}
+          {%- set ultimo = (prossimo - timedelta(days=1)).day -%}
+          {%- set ns = namespace(out=[]) -%}
+          {%- for c in cals -%}
+            {%- set ci = loop.index0 -%}
+            {%- for ev in (agenda[c[0]].events if agenda is defined and c[0] in agenda else []) -%}
+              {%- set tuttoilgiorno = 'T' not in (ev.start | string) -%}
+              {%- if tuttoilgiorno -%}
+                {%- set sd = (ev.start | string)[:10] -%}
+                {%- set ed = (strptime((ev.end | string)[:10], '%Y-%m-%d') - timedelta(days=1)).strftime('%Y-%m-%d') -%}
+                {%- set ora = '' -%}
+                {%- set k = '00:00' -%}
+              {%- else -%}
+                {%- set s = as_local(as_datetime(ev.start)) -%}
+                {%- set e = as_local(as_datetime(ev.end)) -%}
+                {%- set sd = s.strftime('%Y-%m-%d') -%}
+                {%- set ed = ([e - timedelta(seconds=1), s] | max).strftime('%Y-%m-%d') -%}
+                {%- set ora = s.strftime('%H:%M') ~ ('-' ~ e.strftime('%H:%M') if e > s else '') -%}
+                {%- set k = s.strftime('%H:%M') -%}
+              {%- endif -%}
+              {%- if ed >= m0 and sd < m1 -%}
+                {%- set d0 = 1 if sd < m0 else sd[8:10] | int -%}
+                {%- set d1 = ultimo if ed >= m1 else ed[8:10] | int -%}
+                {%- set tit = ((ev.summary or '') | string | regex_replace('[|\\r\\n]+', ' ') | trim)[:50] -%}
+                {%- set luogo = ((ev.location or '') | string | regex_replace('[|\\r\\n]+', ' ') | trim)[:50] -%}
+                {%- set riga = [ci, d0, d1, ora, tit, luogo] | join('|') -%}
+                {%- set ns.out = ns.out + ['%02d' | format(d0) ~ k ~ '#' ~ riga] -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endfor -%}
+          {{ (ns.out | sort | map('regex_replace', '^[^#]*#', '') | list)[:80] | join('\n') }}

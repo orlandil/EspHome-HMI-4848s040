@@ -1,0 +1,166 @@
+---
+# Visualizzazione telecamere ESP32-CAM (esp32_camera_web_server in modalità snapshot).
+# Il display scarica di continuo l'immagine JPEG dalla telecamera (~2-3 fps):
+# non è un video vero, ma è il massimo ragionevole per un ESP32-S3.
+#
+# Si apre da uno slot di tipo "Telecamera" (vedi hmi_slots.h). Si chiude toccando
+# l'immagine, con il pulsante "Chiudi" o da sola dopo 5 minuti.
+#
+# vars (opzionali): nomi e URL delle telecamere selezionabili nell'editor degli slot
+#    cam1_name, cam1_url, cam2_name, cam2_url
+
+globals:
+  - id: cam_streaming
+    type: bool
+    initial_value: 'false'
+  # slot da cui è stata aperta la telecamera (per tornare alla pagina giusta)
+  - id: cam_from_idx
+    type: int
+    initial_value: '0'
+
+esphome:
+  on_boot:
+    - priority: -100
+      then:
+        - lambda: |-
+            hmi_slots::set_list('c',
+              "${cam1_name | default('Telecamera 1')}\n${cam2_name | default('Telecamera 2')}",
+              "${cam1_url | default('http://camera-1.local:8081/')}\n${cam2_url | default('http://camera-2.local:8081/')}");
+
+http_request:
+  timeout: 4s
+
+image:
+  - platform: online_image
+    id: cam_image
+    url: ${cam1_url | default('http://camera-1.local:8081/')}
+    format: JPEG
+    type: RGB565
+    resize: 480x360
+    update_interval: never
+    on_download_finished:
+      - lvgl.image.update:
+          id: cam_widget
+          src: cam_image
+      - lvgl.widget.hide: cam_status
+      # tiene il display acceso e non fa partire lo screensaver mentre si guarda
+      - lambda: 'lv_display_trigger_activity(nullptr);'
+      - script.execute: backlight_timeout_off
+      - script.execute: cam_next_frame
+    on_error:
+      - lvgl.label.update:
+          id: cam_status
+          text: "Telecamera non raggiungibile, riprovo..."
+      - lvgl.widget.show: cam_status
+      - script.execute: cam_retry
+
+script:
+  - id: cam_open
+    mode: restart
+    parameters:
+      idx: int
+      url: string
+      title: string
+    then:
+      - globals.set:
+          id: cam_from_idx
+          value: !lambda 'return idx;'
+      - globals.set:
+          id: cam_streaming
+          value: 'true'
+      - lvgl.label.update:
+          id: cam_title
+          text: !lambda 'return title;'
+      - lvgl.label.update:
+          id: cam_status
+          text: "Connessione..."
+      - lvgl.widget.show: cam_status
+      - lvgl.page.show: camera_page
+      - online_image.set_url:
+          id: cam_image
+          url: !lambda 'return url;'
+      - script.execute: cam_timeout
+
+  - id: cam_close
+    then:
+      - globals.set:
+          id: cam_streaming
+          value: 'false'
+      - script.stop: cam_timeout
+      - script.stop: cam_next_frame
+      - script.stop: cam_retry
+      - online_image.release: cam_image
+      - if:
+          condition:
+            lambda: 'return id(cam_from_idx) >= 12;'
+          then:
+            - lvgl.page.show: main_page
+          else:
+            - lvgl.page.show: dispositivi_page
+
+  # Chiede il fotogramma successivo
+  - id: cam_next_frame
+    mode: restart
+    then:
+      - delay: 100ms
+      - if:
+          condition:
+            lambda: 'return id(cam_streaming);'
+          then:
+            - component.update: cam_image
+
+  - id: cam_retry
+    mode: restart
+    then:
+      - delay: 2s
+      - if:
+          condition:
+            lambda: 'return id(cam_streaming);'
+          then:
+            - component.update: cam_image
+
+  - id: cam_timeout
+    mode: restart
+    then:
+      - delay: 5min
+      - script.execute: cam_close
+
+lvgl:
+  pages:
+    - id: camera_page
+      styles: page_style
+      widgets:
+        - image:
+            id: cam_widget
+            align: center
+            src: cam_image
+            clickable: true
+            on_click:
+              - script.execute: cam_close
+        - label:
+            id: cam_title
+            align: top_left
+            x: 12
+            y: 14
+            text_font: nunito_24
+            text_color: $label_on_color
+            text: ""
+        - label:
+            id: cam_status
+            align: center
+            text_color: $label_on_color
+            text: "Connessione..."
+        - button:
+            align: bottom_right
+            x: -8
+            y: -4
+            width: 130
+            height: 52
+            radius: 15
+            widgets:
+              - label:
+                  align: center
+                  text_color: $label_on_color
+                  text: "Chiudi"
+            on_click:
+              - script.execute: cam_close
